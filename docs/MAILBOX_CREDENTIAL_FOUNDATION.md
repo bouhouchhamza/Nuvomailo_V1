@@ -1,0 +1,31 @@
+# Synthetic mailbox credential lifecycle
+
+Implemented locally, 14 October 2026. Default API/worker remain unconfigured for credentials; no production keys, customers or public mail were enabled.
+
+## Executable flow
+
+Migration4743 adds session/user/purpose-bound digest-only grants, mailbox credential generations, encrypted hash artifacts and a separate leased credential queue. A verified active user needs explicit write access to the mailbox and a live dashboard session. Issuance requires dashboard password reauthentication and recent MFA if enabled. Delivery is an injected private channel; no raw grant appears in HTTP responses, audits or job records. Grants expire after15 minutes, issuance revokes earlier unused grants for that recipient/mailbox, and consumption is atomic and single-use. Mailbox passwords must differ from dashboard passwords; newline/NUL input is rejected before native interactive hashing.
+
+Consumption commits grant use and allocates a generation before hashing. A failed hash consumes the grant and requires a new grant; crashes in hashing become failed after10 minutes. The broker receives plaintext only through the local private socket and native Dovecot stdin. It returns provider-native ARGON2ID to the trusted credential service, never to the browser. Standard AES-256-GCM encrypts this hash with mailbox/generation/artifact-bound AAD and a random nonce. Queue rows carry only an opaque artifact reference. No custom password format or cryptographic protocol is used.
+
+The separate explicit lab credential worker decrypts artifacts, applies typed targets through the existing management agent, fences DB acknowledgements with leases, retries at most5 times and supersedes older generations. The mail helper independently validates trusted address ownership, serializes configuration access, fsyncs generation acceptance before effects and rejects older/conflicting generations. Replaying the same generation repairs a partial effect without reverting a newer password. Applied changes kick existing Dovecot sessions and retain mailbox data/quota/suspension policy.
+
+The dashboard provides availability checks, setup/reset/rotation request, separate password and grant entry, and safe application-state polling. Submitted secrets clear immediately; queued does not mean active. Real setup delivery is not configured.
+
+## Broker sandbox actually inspected
+
+The pinned DMS image runs only `credential_broker.py` as UID3002:GID3000. It has network mode `none`, read-only root filesystem/code/auth token, dropped ALL capabilities, no-new-privileges, bounded memory/CPU/PIDs/file descriptors and no core dumps. Its only writable persistent mount is the private socket directory. It has no mail/configuration/database/credential-vault/Docker mounts. Requests require UID1000:GID3000 Unix peer credentials plus a separate bearer token. The only operation is native `doveadm pw -s ARGON2ID`, with a fixed argv and captured output; request bodies/passwords/hash values are never logged. UID1001:GID3000 rejection was executed, including access to the socket group without the authorized UID.
+
+The native hash broker is independently sandboxed. The mail configuration helper remains the previously documented privileged lab helper; its production sandbox is not approved by this work. The credential encryption key is synthetic, stored in a restricted retained named volume and readable only by the explicit lab worker mount. Production key custody/rotation and remote transport are unresolved. Memory compromise can expose transient secrets; JavaScript strings cannot guarantee erasure. Encrypted artifacts still require private backup handling and reviewed retention/key rotation.
+
+## Actual evidence and corrected assumptions
+
+Backend tests cover reauthentication, purpose/session substitution, password separation, expiry/revocation, concurrent single-use consumption, encrypted queue/audit storage, generation supersession, failed apply/expired lease recovery and HTTP CSRF/body-secret boundaries. UI tests cover unavailable mode and secret clearing/pending-versus-applied state. Latest regression:21 backend/22 frontend tests and builds/typechecks pass.
+
+Real isolated tests passed native hashing, authenticated HTTP grant/consume, real IMAP setup/rotation, old password rejection, remote stale generation rejection, managed passdb inspection and no plaintext/hash in queue/audit storage. `run-credentials.mjs` additionally restarts mail and broker while the test retains only synthetic secrets in memory, then verifies new-password login and replay after restart. Peer rejection and sandbox configuration were inspected separately. The worker image was rebuilt, migration applied to both development and isolated lab databases, and volumes preserved.
+
+Initial confirmation using `doveadm auth lookup` failed because the first deny passdb stopped lookup for an otherwise active user. Confirmation now independently compares DMS-generated Dovecot userdb with the requested native hash and waits for stable watcher convergence. This establishes effective passdb configuration; actual password authentication is separately proven by IMAP clients. Legacy seed-derived password inspection is used only for unmanaged fixtures. A second run initially hit startup before Postfix readiness; the runner now waits on the existing readiness probe.
+
+Run `npm --prefix backend run build`, build the lab worker image after migration changes, then `node infrastructure/mail-lab/run-credentials.mjs`. Stop lab services afterward; never delete volumes. Optional explicit worker: `docker compose -f infrastructure/mail-lab/compose.yaml run --rm -T worker node dist/workers/run-credentials.js --lab --once`. It refuses a non-test environment or missing `--lab`.
+
+Production gates: independent security review, separate runtime DB roles, durable secret provider/key rotation, bounded distributed rate controls, approved notification/setup channel, encrypted authenticated transport for separated hosts, artifact retention, credential-generation backup/restore reconciliation and independently confined mail configuration helper. No production readiness claim follows from local synthetic evidence.

@@ -1,5 +1,15 @@
 # Security design & pilot gates · Nuvomailo
 
+## Current security boundary status (14 October 2026)
+
+The [secure mail foundation](SECURE_MAIL_FOUNDATION.md) documents the current isolated agent/helper audit, independent authentication/inbound policy and proposed password setup/reset/rotation. Production credential handling and privileged helper deployment remain disabled. See [Git checkpoint review](GIT_CHECKPOINT_REVIEW.md) for sensitive/generated material exclusions.
+
+Foundational controls implemented and locally tested: Argon2id/JWT, backend roles/scoped queries, transactional membership locks for mutations, reauthorization after DNS lookup, expiring/throttled ownership challenges (renewal cannot reset throttle), bounded JSON, sanitized errors, request correlation without logging bodies/query strings, transactional tenant audit, safe queue codes, lease-token fencing, bounded worker retries and timeout/reconciliation behavior. API processes never invoke mail adapters or execute infrastructure commands.
+
+These controls are not a completed security audit. Pending production gates include recoverable/revocable sessions and MFA, verified emails/account lifecycle, durable abuse/rate limits and resource ceilings, least-privilege separate API/worker DB roles and restricted agent transport/credentials, remote stale-revision fencing, independent browser/tenant testing, audit retention/tamper resistance, domain reclamation/revalidation/transfer, filtering/relay/reputation controls and measured backups/restores. HTTP `mailReady:false` and pending adapter mode remain intentional.
+
+See [architecture decisions](ARCHITECTURE_DECISIONS.md), [full product roadmap](PRODUCT_ROADMAP.md), and [operations](OPERATIONS.md). The historical checklist below remains a set of requirements, not evidence of deployment or certification. Real infrastructure, credentials, DNS, sending mail and spending follow the owner's explicit approval gates.
+
 > **State:** Security requirements defined; not an audit or certification.  
 > **Applies to:** React dashboard, Express API, PostgreSQL, provisioning, Docker Mailserver and VPS.
 

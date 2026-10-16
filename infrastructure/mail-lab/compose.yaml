@@ -1,0 +1,127 @@
+name: nuvomailo-dms-lab
+services:
+  init:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    entrypoint: [python3, /opt/nuvomailo-lab/bootstrap.py]
+    volumes:
+      - config:/tmp/docker-mailserver
+      - agent-state:/var/lib/nuvomailo-agent
+      - worker-auth:/run/nuvomailo-worker-auth
+      - ./agent:/opt/nuvomailo-lab:ro
+      - public-trust:/run/nuvomailo-public-trust
+      - broker-auth:/run/nuvomailo-broker-auth
+      - credential-vault:/run/nuvomailo-credential-vault
+      - credential-socket:/run/nuvomailo-credential-broker
+    networks: [lab]
+  mail:
+    stop_grace_period: 60s
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    hostname: mail.lab.invalid
+    environment:
+      ACCOUNT_PROVISIONER: FILE
+      ENABLE_QUOTAS: "1"
+      ENABLE_RSPAMD: "0"
+      ENABLE_CLAMAV: "0"
+      ENABLE_FAIL2BAN: "0"
+      ENABLE_AMAVIS: "0"
+      ENABLE_SPAMASSASSIN: "0"
+      ENABLE_OPENDKIM: "0"
+      ENABLE_OPENDMARC: "0"
+      ENABLE_POSTGREY: "0"
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /tmp/docker-mailserver/ssl/lab-cert.pem
+      SSL_KEY_PATH: /tmp/docker-mailserver/ssl/lab-key.pem
+      PERMIT_DOCKER: none
+      LOG_LEVEL: warn
+      DMS_EVENT_CHECK_INTERVAL: 1s
+    volumes:
+      - config:/tmp/docker-mailserver
+      - mail:/var/mail
+      - state:/var/mail-state
+      - agent-state:/var/lib/nuvomailo-agent
+      - agent-socket:/run/nuvomailo-agent
+      - worker-auth:/run/nuvomailo-worker-auth
+      - ./agent:/opt/nuvomailo-lab:ro
+      - ./bindings.json:/opt/nuvomailo-bindings.json:ro
+      - ./user-patches.sh:/tmp/docker-mailserver/user-patches.sh:ro
+    networks: [lab]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    cpus: 1.0
+    depends_on:
+      init: {condition: service_completed_successfully}
+  credential-broker:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    user: "3002:3000"
+    entrypoint: [python3, /opt/broker/credential_broker.py]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs: [/tmp]
+    volumes:
+      - ./agent/credential_broker.py:/opt/broker/credential_broker.py:ro
+      - broker-auth:/run/nuvomailo-broker-auth:ro
+      - credential-socket:/run/nuvomailo-credential-broker
+    depends_on:
+      init: {condition: service_completed_successfully}
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_DB: nuvomailo_lab
+      # Isolated disposable fixture database, no published ports or production credentials.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes: ["database:/var/lib/postgresql/data"]
+    networks: [lab]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U lab -d nuvomailo_lab]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  worker:
+    build:
+      context: ../..
+      dockerfile: infrastructure/mail-lab/Worker.Dockerfile
+    user: "1000:3000"
+    environment:
+      NODE_ENV: test
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: lab
+      PGDATABASE: nuvomailo_lab
+      PGPASSWORD: lab-unused-trust-fixture
+    volumes:
+      - ../../backend/dist:/app/dist:ro
+      - agent-socket:/run/nuvomailo-agent:ro
+      - worker-auth:/run/nuvomailo-worker-auth:ro
+      - public-trust:/run/nuvomailo-public-trust:ro
+      - broker-auth:/run/nuvomailo-broker-auth:ro
+      - credential-vault:/run/nuvomailo-credential-vault:ro
+      - credential-socket:/run/nuvomailo-credential-broker:ro
+    networks: [lab]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      db: {condition: service_healthy}
+    command: [node, dist/mail-lab/client.js, inspect]
+networks:
+  lab:
+    internal: true
+volumes:
+  config:
+  mail:
+  state:
+  agent-state:
+  agent-socket:
+  worker-auth:
+  database:
+  public-trust:
+  broker-auth:
+  credential-vault:
+  credential-socket:

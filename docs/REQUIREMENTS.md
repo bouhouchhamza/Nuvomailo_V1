@@ -1,4 +1,6 @@
-# Product requirements · Nuvomailo
+# Historical initial requirements · Nuvomailo
+
+> Full product scope and current milestone acceptance are in [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md), with actual boundaries in [ARCHITECTURE.md](ARCHITECTURE.md). This initial demonstration checklist is preserved as history; unchecked items are not a current implementation inventory.
 
 > **Status:** Approved MVP scope, implementation pending · **Target:** 18 October 2026  
 > **Audience:** Private demonstration; no production school mail

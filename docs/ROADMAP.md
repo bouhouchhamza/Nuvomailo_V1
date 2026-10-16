@@ -1,4 +1,6 @@
-# MVP execution plan · Nuvomailo
+# Historical demonstration plan · Nuvomailo
+
+> Superseded for product scope by [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md). Preserved as historical planning, not a limit on the full Nuvomailo product or evidence of implemented features.
 
 > **Deadline:** Sunday, 18 October 2026  
 > **Scope:** Demo-ready MVP using **synthetic data** — not production school email  

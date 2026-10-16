@@ -1,0 +1,60 @@
+name: nuvomailo-dms-lab-restore
+services:
+  restore:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    entrypoint: [python3, /opt/nuvomailo-lab/restore.py]
+    volumes:
+      - source:/source:ro
+      - config:/restore/tmp/docker-mailserver
+      - mail:/restore/var/mail
+      - state:/restore/var/mail-state
+      - agent-state:/restore/var/lib/nuvomailo-agent
+      - ./agent:/opt/nuvomailo-lab:ro
+    networks: [restore]
+  mail:
+    stop_grace_period: 60s
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    hostname: mail.lab.invalid
+    environment:
+      ACCOUNT_PROVISIONER: FILE
+      ENABLE_QUOTAS: "1"
+      ENABLE_RSPAMD: "0"
+      ENABLE_CLAMAV: "0"
+      ENABLE_FAIL2BAN: "0"
+      ENABLE_AMAVIS: "0"
+      ENABLE_SPAMASSASSIN: "0"
+      ENABLE_OPENDKIM: "0"
+      ENABLE_OPENDMARC: "0"
+      ENABLE_POSTGREY: "0"
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /tmp/docker-mailserver/ssl/lab-cert.pem
+      SSL_KEY_PATH: /tmp/docker-mailserver/ssl/lab-key.pem
+      PERMIT_DOCKER: none
+      LOG_LEVEL: warn
+      DMS_EVENT_CHECK_INTERVAL: 1s
+    volumes:
+      - config:/tmp/docker-mailserver
+      - mail:/var/mail
+      - state:/var/mail-state
+      - agent-state:/var/lib/nuvomailo-agent
+      - socket:/run/nuvomailo-agent
+      - auth:/run/nuvomailo-worker-auth:ro
+      - ./agent:/opt/nuvomailo-lab:ro
+      - ./bindings.json:/opt/nuvomailo-bindings.json:ro
+      - ./user-patches.sh:/tmp/docker-mailserver/user-patches.sh:ro
+    networks: [restore]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    cpus: 1.0
+    depends_on:
+      restore: {condition: service_completed_successfully}
+networks:
+  restore: {internal: true}
+volumes:
+  source: {external: true, name: nuvomailo-dms-lab_agent-state}
+  auth: {external: true, name: nuvomailo-dms-lab_worker-auth}
+  config:
+  mail:
+  state:
+  agent-state:
+  socket:

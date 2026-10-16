@@ -44,6 +44,8 @@ postfix-virtual.cf
 *.log
 logs/
 tmp/
+infrastructure/mail-lab/results/
+infrastructure/production/secrets/
 *.tmp
 
 # Editor and OS files

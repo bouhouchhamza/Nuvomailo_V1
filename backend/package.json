@@ -4,7 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsx --test tests/*.test.ts",
+    "migrate": "node-pg-migrate",
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.tests.json",
+    "start": "node dist/server.js",
+    "worker": "tsx src/workers/run-provisioning.ts",
+    "worker:start": "node dist/workers/run-provisioning.js",
+    "domain:local": "tsx src/workers/run-domain-revalidation.ts --local-synthetic",
+    "alerts:local": "tsx src/workers/run-operations-alerts.ts --local-synthetic",
+    "billing:local-renewal": "tsx src/workers/run-billing-renewals.ts --local-synthetic"
   },
   "keywords": [],
   "author": "",
@@ -14,15 +24,32 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^24.19.2",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "@types/sanitize-html": "^2.16.2",
+    "@types/supertest": "^7.2.1",
+    "node-pg-migrate": "^9.0.0",
+    "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "argon2": "^0.45.1",
     "cors": "^2.8.6",
     "dotenv": "^18.0.7",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
     "helmet": "^8.3.0",
+    "imapflow": "^2.4.2",
+    "jsonwebtoken": "^9.0.3",
+    "mailparser": "^3.9.39",
+    "nodemailer": "^10.1.1",
+    "otpauth": "^9.5.2",
+    "pg": "^8.23.1",
+    "sanitize-html": "^2.18.1",
     "zod": "^4.6.7"
   }
 }

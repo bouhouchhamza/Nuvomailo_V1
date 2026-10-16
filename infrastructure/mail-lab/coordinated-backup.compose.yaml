@@ -1,0 +1,127 @@
+name: nuvomailo-coordinated-restore
+services:
+  helper:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    entrypoint: [python3, /opt/recovery/coordinated_backup.py]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE, CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    pids_limit: 32
+    tmpfs: ["/tmp:size=256m,mode=0700"]
+    volumes:
+      - ./agent/coordinated_backup.py:/opt/recovery/coordinated_backup.py:ro
+      - source-config:/source/config:ro
+      - source-mail:/source/mail:ro
+      - source-state:/source/state:ro
+      - source-agent:/source/agent-state:ro
+      - source-vault:/source/credential-vault:ro
+      - source-broker-auth:/source/broker-auth:ro
+      - source-worker-auth:/source/worker-auth:ro
+      - source-trust:/source/public-trust:ro
+      - archives:/archives
+      - keys:/keys
+      - config:/target/config
+      - mail:/target/mail
+      - state:/target/state
+      - agent:/target/agent-state
+      - vault:/target/credential-vault
+      - broker-auth:/target/broker-auth
+      - worker-auth:/target/worker-auth
+      - trust:/target/public-trust
+  mail:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.1.0@sha256:af51b15dd3fc72153c0e90eb7692bb5e3a463212d87959a80fa7aa89b617d44a
+    hostname: mail.lab.invalid
+    stop_grace_period: 60s
+    environment:
+      ACCOUNT_PROVISIONER: FILE
+      ENABLE_QUOTAS: "1"
+      ENABLE_RSPAMD: "0"
+      ENABLE_CLAMAV: "0"
+      ENABLE_FAIL2BAN: "0"
+      ENABLE_AMAVIS: "0"
+      ENABLE_SPAMASSASSIN: "0"
+      ENABLE_OPENDKIM: "0"
+      ENABLE_OPENDMARC: "0"
+      ENABLE_POSTGREY: "0"
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /tmp/docker-mailserver/ssl/lab-cert.pem
+      SSL_KEY_PATH: /tmp/docker-mailserver/ssl/lab-key.pem
+      PERMIT_DOCKER: none
+      LOG_LEVEL: warn
+      DMS_EVENT_CHECK_INTERVAL: 1s
+    volumes:
+      - config:/tmp/docker-mailserver
+      - mail:/var/mail
+      - state:/var/mail-state
+      - agent:/var/lib/nuvomailo-agent
+      - worker-auth:/run/nuvomailo-worker-auth:ro
+      - agent-socket:/run/nuvomailo-agent
+      - ./agent:/opt/nuvomailo-lab:ro
+      - ./bindings.json:/opt/nuvomailo-bindings.json:ro
+      - ./user-patches.sh:/tmp/docker-mailserver/user-patches.sh:ro
+    networks: [restore]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    cpus: 1.0
+  verify:
+    image: nuvomailo-dms-lab-worker
+    user: "1000:3000"
+    entrypoint: [node, dist/mail-lab/recovery-conformance.js]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      NODE_ENV: test
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: lab
+      PGDATABASE: nuvomailo_lab
+      PGPASSWORD: lab-unused-trust-fixture
+    volumes:
+      - ../../backend/dist:/app/dist:ro
+      - vault:/run/nuvomailo-credential-vault:ro
+      - trust:/run/nuvomailo-public-trust:ro
+      - worker-auth:/run/nuvomailo-worker-auth:ro
+      - agent-socket:/run/nuvomailo-agent:ro
+    networks: [restore]
+    depends_on:
+      db: {condition: service_healthy}
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_DB: nuvomailo_lab
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes: [database:/var/lib/postgresql/data]
+    networks: [restore]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U lab -d nuvomailo_lab]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+networks:
+  restore: {internal: true}
+volumes:
+  source-config: {external: true, name: nuvomailo-dms-lab_config}
+  source-mail: {external: true, name: nuvomailo-dms-lab_mail}
+  source-state: {external: true, name: nuvomailo-dms-lab_state}
+  source-agent: {external: true, name: nuvomailo-dms-lab_agent-state}
+  source-vault: {external: true, name: nuvomailo-dms-lab_credential-vault}
+  source-broker-auth: {external: true, name: nuvomailo-dms-lab_broker-auth}
+  source-worker-auth: {external: true, name: nuvomailo-dms-lab_worker-auth}
+  source-trust: {external: true, name: nuvomailo-dms-lab_public-trust}
+  archives: {external: true, name: nuvomailo-dms-lab_coordinated-archives}
+  keys: {external: true, name: nuvomailo-dms-lab_backup-keys}
+  database:
+  config:
+  mail:
+  state:
+  agent:
+  vault:
+  broker-auth:
+  worker-auth:
+  trust:
+  agent-socket:

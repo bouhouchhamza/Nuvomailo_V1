@@ -1,0 +1,134 @@
+name: nuvomailo-closed
+services:
+  db:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_USER: nuvomailo_owner
+      POSTGRES_DB: nuvomailo
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-owner-password
+    secrets: [db-owner-password]
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./roles.sql:/docker-entrypoint-initdb.d/010-roles.sql:ro
+    networks: [private]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U nuvomailo_owner -d nuvomailo]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  migrate:
+    image: nuvomailo-migrations:local-review
+    profiles: [maintenance]
+    build:
+      {
+        context: ../..,
+        dockerfile: infrastructure/production/Dockerfile,
+        target: migration,
+      }
+    environment:
+      NODE_ENV: production
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: nuvomailo_owner
+      PGDATABASE: nuvomailo
+      PGPASSWORD_FILE: /run/secrets/db-owner-password
+    secrets: [db-owner-password]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    networks: [private]
+    depends_on: { db: { condition: service_healthy } }
+  api:
+    build:
+      {
+        context: ../..,
+        dockerfile: infrastructure/production/Dockerfile,
+        target: runtime,
+      }
+    image: nuvomailo-control-plane:local-review
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: nuvomailo_api
+      PGDATABASE: nuvomailo
+      PGPASSWORD_FILE: /run/secrets/db-api-password
+      JWT_SECRET_FILE: /run/secrets/jwt-signing-key
+      IDENTITY_ENCRYPTION_KEY_FILE: /run/secrets/identity-key
+      FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:?owner-approved HTTPS origin required}
+    secrets: [db-api-password, jwt-signing-key, identity-key]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    mem_limit: 768m
+    pids_limit: 128
+    networks: [private]
+    depends_on: { db: { condition: service_healthy } }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4000/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+  worker:
+    image: nuvomailo-control-plane:local-review
+    command: [node, dist/container-entrypoint.js, worker]
+    environment:
+      NODE_ENV: production
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: nuvomailo_worker
+      PGDATABASE: nuvomailo
+      PGPASSWORD_FILE: /run/secrets/db-worker-password
+    secrets: [db-worker-password]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    mem_limit: 512m
+    pids_limit: 64
+    networks: [private]
+    depends_on: { db: { condition: service_healthy } }
+  probe:
+    profiles: [testing]
+    image: nuvomailo-control-plane:local-review
+    command: [node, dist/scripts/closed-stack-conformance.js]
+    volumes: ["../../backend/dist:/app/dist:ro"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+    depends_on: { api: { condition: service_healthy } }
+networks:
+  private: { internal: true }
+volumes:
+  database:
+secrets:
+  db-owner-password:
+    {
+      file: "${SECRETS_DIR:?approved private secret directory required}/db-owner-password",
+    }
+  db-api-password:
+    {
+      file: "${SECRETS_DIR:?approved private secret directory required}/db-api-password",
+    }
+  db-worker-password:
+    {
+      file: "${SECRETS_DIR:?approved private secret directory required}/db-worker-password",
+    }
+  jwt-signing-key:
+    {
+      file: "${SECRETS_DIR:?approved private secret directory required}/jwt-signing-key",
+    }
+  identity-key:
+    {
+      file: "${SECRETS_DIR:?approved private secret directory required}/identity-key",
+    }
